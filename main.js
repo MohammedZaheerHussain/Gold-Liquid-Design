@@ -315,102 +315,73 @@ void main() {
     vec3 R = reflect(-V, N);
     
     float NdotV = max(dot(N, V), 0.0);
-    float edgeFactor = 1.0 - NdotV;
+    float fresnel = 1.0 - NdotV;
     
-    // Position for color zones
     float yPos = v_localPosition.y;
     float xPos = v_localPosition.x;
     
-    // ========== VISIBLE INTERNAL COLORS (like reference) ==========
-    // Navy blue zone - visible in lower/center area
-    float navyZone = smoothstep(0.6, -0.5, yPos);
-    vec3 navyColor = vec3(0.02, 0.06, 0.18);      // BRIGHTER navy blue - visible!
+    // ========== GLASS 2.0 - PREMIUM MATERIAL ==========
     
-    // Gold/warm zone - upper areas
-    vec3 goldColor = vec3(0.25, 0.16, 0.05);      // Warm gold base
+    // Internal color gradient (subtle, glass-like depth)
+    float depthZone = smoothstep(0.5, -0.6, yPos);
+    vec3 deepBlue = vec3(0.015, 0.04, 0.12);
+    vec3 warmAmber = vec3(0.15, 0.09, 0.025);
+    vec3 glassCore = mix(warmAmber, deepBlue, depthZone);
     
-    // Blend internal colors
-    vec3 internalColor = mix(goldColor, navyColor, navyZone);
+    // Glass depth - darker toward center
+    float glassDepth = pow(NdotV, 1.2);
+    glassCore *= (0.4 + glassDepth * 0.6);
     
-    // Add depth variation based on view angle (glass-like)
-    float depthFade = pow(NdotV, 0.8);
-    vec3 deepShadow = vec3(0.01, 0.02, 0.05);
-    internalColor = mix(deepShadow, internalColor, 0.5 + depthFade * 0.5);
+    // ========== FRESNEL REFLECTIONS ==========
+    float fresnelPow = pow(fresnel, 2.2);
+    vec3 env = sampleEnv(R);
+    vec3 reflection = env * fresnelPow * 0.85;
     
-    // ========== ENVIRONMENT REFLECTION (glass) ==========
-    float glassFresnel = pow(edgeFactor, 2.0);
-    vec3 envColor = sampleEnv(R);
-    vec3 envReflection = envColor * glassFresnel * 1.2;
+    // ========== RIM LIGHT (elegant, thin) ==========
+    float rim = pow(fresnel, 10.0);
+    float rimMask = smoothstep(-0.15, 0.4, yPos);
+    vec3 rimLight = vec3(1.0, 0.97, 0.9) * rim * rimMask * 1.8;
     
-    // ========== BRIGHT RIM HIGHLIGHT (like reference) ==========
-    // Visible white/cream rim band on top curve
-    float rimBand = pow(edgeFactor, 8.0);
-    float topMask = smoothstep(-0.2, 0.35, yPos);
-    vec3 rimColor = vec3(1.0, 0.96, 0.88) * rimBand * topMask * 2.5;  // BRIGHTER
+    // ========== LEFT WARM GLOW ==========
+    float leftF = smoothstep(0.2, -0.65, xPos);
+    float leftH = smoothstep(-0.5, 0.45, yPos);
+    float leftInt = leftF * leftH * pow(fresnel, 2.0);
+    vec3 leftLight = vec3(0.9, 0.55, 0.18) * leftInt * 1.4;
     
-    // ========== LEFT EDGE - BRIGHT ORANGE GLOW (like reference) ==========
-    // This is the prominent warm glow on the left edge
-    float leftEdge = smoothstep(0.3, -0.7, xPos);
-    float leftHeight = smoothstep(-0.6, 0.5, yPos);
-    float leftFresnel = pow(edgeFactor, 1.8);
-    float leftIntensity = leftEdge * leftHeight * leftFresnel;
+    // ========== RIGHT COOL REFLECTION ==========
+    float rightF = smoothstep(-0.05, 0.6, xPos);
+    float rightH = smoothstep(-0.2, 0.35, yPos) * (1.0 - smoothstep(0.5, 0.85, yPos));
+    float rightInt = rightF * rightH * pow(fresnel, 2.5);
+    vec3 rightLight = vec3(0.12, 0.28, 0.55) * rightInt * 0.8;
     
-    // Bright orange/gold light on left
-    vec3 leftGlow = vec3(1.0, 0.65, 0.25) * leftIntensity * 1.8;  // BRIGHT orange
-    
-    // Additional soft warmth behind
-    float leftSoft = smoothstep(0.5, -0.9, xPos) * leftHeight;
-    vec3 leftWarm = vec3(0.6, 0.35, 0.1) * leftSoft * pow(edgeFactor, 2.5) * 0.8;
-    
-    // ========== RIGHT EDGE - BLUE/CYAN REFLECTION ==========
-    float rightEdge = smoothstep(-0.1, 0.7, xPos);
-    float rightMid = smoothstep(-0.3, 0.4, yPos) * (1.0 - smoothstep(0.5, 0.9, yPos));
-    float rightFresnel = pow(edgeFactor, 2.2);
-    float rightIntensity = rightEdge * rightMid * rightFresnel;
-    vec3 rightGlow = vec3(0.15, 0.35, 0.7) * rightIntensity * 1.0;  // Blue reflection
-    
-    // ========== SPECULAR HIGHLIGHTS ==========
-    vec3 L1 = normalize(vec3(-0.55, 0.8, 0.35));
-    vec3 H1 = normalize(V + L1);
-    float NdotH1 = max(dot(N, H1), 0.0);
-    float NdotL1 = max(dot(N, L1), 0.0);
-    float VdotH1 = max(dot(V, H1), 0.0);
-    
-    float D1 = D_GGX(NdotH1, 0.025);
-    vec3 F1 = F_Schlick(VdotH1, vec3(1.0, 0.92, 0.75));
-    vec3 spec1 = D1 * F1 * NdotL1 * vec3(1.0, 0.95, 0.85) * 1.2;
-    
-    // Secondary highlight
-    vec3 L2 = normalize(vec3(0.5, 0.5, 0.5));
-    vec3 H2 = normalize(V + L2);
-    float NdotH2 = max(dot(N, H2), 0.0);
-    float NdotL2 = max(dot(N, L2), 0.0);
-    float D2 = D_GGX(NdotH2, 0.05);
-    vec3 spec2 = D2 * NdotL2 * vec3(0.9, 0.85, 0.7) * 0.25;
+    // ========== SPECULAR (sharp, glass-like) ==========
+    vec3 L = normalize(vec3(-0.5, 0.75, 0.4));
+    vec3 H = normalize(V + L);
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    float D = D_GGX(NdotH, 0.018);
+    vec3 F = F_Schlick(VdotH, vec3(0.95, 0.88, 0.7));
+    vec3 spec = D * F * NdotL * vec3(1.0, 0.96, 0.88) * 0.9;
     
     // ========== EDGE DEFINITION ==========
-    float edgeDefine = pow(edgeFactor, 3.5);
-    vec3 edgeHighlight = vec3(0.6, 0.5, 0.32) * edgeDefine * 0.35;
+    float edge = pow(fresnel, 4.0);
+    vec3 edgeColor = vec3(0.5, 0.4, 0.25) * edge * 0.3;
     
     // ========== COMPOSITE ==========
-    vec3 finalColor = internalColor * 0.35;       // Visible internal colors
-    finalColor += envReflection;                  // Glass reflections
-    finalColor += rimColor;                       // Bright rim band
-    finalColor += leftGlow;                       // Orange left glow
-    finalColor += leftWarm;                       // Soft warmth
-    finalColor += rightGlow;                      // Blue right
-    finalColor += spec1;                          // Main specular
-    finalColor += spec2;                          // Secondary specular
-    finalColor += edgeHighlight;                  // Edge definition
+    vec3 color = glassCore * 0.25;
+    color += reflection;
+    color += rimLight;
+    color += leftLight;
+    color += rightLight;
+    color += spec;
+    color += edgeColor;
     
-    // ========== TONE MAPPING ==========
-    float a = 2.4, b = 0.025, c = 2.2, d = 0.58, e = 0.13;
-    finalColor = clamp((finalColor * (a * finalColor + b)) / (finalColor * (c * finalColor + d) + e), 0.0, 1.0);
+    // Tone mapping (filmic)
+    color = color / (color + 0.5);
+    color = pow(color, vec3(0.92, 0.95, 1.0));
     
-    // Subtle warmth
-    finalColor = pow(finalColor, vec3(0.9, 0.95, 1.0));
-    
-    gl_FragColor = vec4(finalColor, 1.0);
+    gl_FragColor = vec4(color, 1.0);
 }
 `;
 
@@ -532,9 +503,9 @@ class LiquidHero {
 
         const bloomPass = new UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            0.28,   // Slightly increased for edge glow
-            0.5,
-            0.82
+            0.22,   // Glass 2.0 - refined subtle glow
+            0.45,
+            0.88
         );
         this.composer.addPass(bloomPass);
 
